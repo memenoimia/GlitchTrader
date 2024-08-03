@@ -1,0 +1,2 @@
+# GlitchTrader
+Max Headroom GlitchTrader
