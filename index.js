@@ -1,10 +1,11 @@
-import axios from 'axios';
-import dotenv from 'dotenv';
-import fs from 'fs';
-import path from 'path';
-import chalk from 'chalk';
-import { buyToken } from './src/buy.js';
-import { sellToken } from './src/sell.js';
+import axios from "axios";
+import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
+import chalk from "chalk";
+import { buyToken } from "./src/buy.js";
+import { sellToken } from "./src/sell.js";
+import { checkSolanaBalance, checkTokenBalance } from "./src/balance.js";
 
 // Configure environment variables
 dotenv.config();
@@ -13,7 +14,7 @@ dotenv.config();
 const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS;
 
 // Log environment variables for debugging
-console.log('Environment Variables Loaded:');
+console.log("Environment Variables Loaded:");
 console.log(`PRICE_CHECK_DELAY: ${process.env.PRICE_CHECK_DELAY}`);
 console.log(`TAKE_PROFIT: ${process.env.TAKE_PROFIT}`);
 console.log(`STOP_LOSS: ${process.env.STOP_LOSS}`);
@@ -22,9 +23,9 @@ console.log(`BUY_AMOUNT: ${process.env.BUY_AMOUNT}`);
 console.log(`SELL_AMOUNT: ${process.env.SELL_AMOUNT}`);
 console.log(`BUY_SECONDS: ${process.env.BUY_SECONDS}`);
 console.log(`SELL_SECONDS: ${process.env.SELL_SECONDS}`);
-console.log(`BUY_SLIPPAGE: ${process.env.BUY_SLIPPAGE}`); // Log the buy slippage
-console.log(`SELL_SLIPPAGE: ${process.env.SELL_SLIPPAGE}`); // Log the sell slippage
-console.log(`Trading Token Address: ${TOKEN_ADDRESS}`); // Log the token address
+console.log(`BUY_SLIPPAGE: ${process.env.BUY_SLIPPAGE}`);
+console.log(`SELL_SLIPPAGE: ${process.env.SELL_SLIPPAGE}`);
+console.log(`Trading Token Address: ${TOKEN_ADDRESS}`);
 
 // Constant values fetched from the environment variables
 const PRICE_CHECK_DELAY = parseInt(process.env.PRICE_CHECK_DELAY);
@@ -35,20 +36,20 @@ const BUY_AMOUNT = parseFloat(process.env.BUY_AMOUNT);
 const SELL_AMOUNT = parseFloat(process.env.SELL_AMOUNT);
 const BUY_SECONDS = parseInt(process.env.BUY_SECONDS) * 1000; // Convert to milliseconds
 const SELL_SECONDS = parseInt(process.env.SELL_SECONDS) * 1000; // Convert to milliseconds
-const API_URL = 'https://api.moonshot.cc/token/v1/solana/';
+const API_URL = "https://api.moonshot.cc/token/v1/solana/";
 const MAX_RETRIES = 3;
 
 // Function to log messages with color coding based on type
-const logBox = (message, type = 'info') => {
+const logBox = (message, type = "info") => {
   let colorFunc;
   switch (type) {
-    case 'success':
+    case "success":
       colorFunc = chalk.green;
       break;
-    case 'error':
+    case "error":
       colorFunc = chalk.red;
       break;
-    case 'warning':
+    case "warning":
       colorFunc = chalk.yellow;
       break;
     default:
@@ -58,19 +59,22 @@ const logBox = (message, type = 'info') => {
 };
 
 // Determine file paths
-const recordsPath = path.resolve('./records.json');
+const recordsPath = path.resolve("./records.json");
 
 // Function to load records from a JSON file
 const loadRecords = () => {
   try {
-    const data = fs.readFileSync(recordsPath, 'utf8');
+    const data = fs.readFileSync(recordsPath, "utf8");
     if (!data) {
-      logBox('No data found in records file. Initializing empty records.', 'warning');
+      logBox(
+        "No data found in records file. Initializing empty records.",
+        "warning"
+      );
       return {};
     }
     return JSON.parse(data);
   } catch (error) {
-    logBox(`Error loading records: ${error.message}`, 'error');
+    logBox(`Error loading records: ${error.message}`, "error");
     return null;
   }
 };
@@ -78,15 +82,23 @@ const loadRecords = () => {
 // Function to save records to a JSON file
 const saveRecords = (records) => {
   try {
-    fs.writeFileSync(recordsPath, JSON.stringify(records, (key, value) => {
-      if (key === 'bought_at' && typeof value === 'number') {
-        return value.toFixed(10);
-      }
-      return value;
-    }, 2), 'utf8');
-    logBox('Records saved successfully.', 'success');
+    fs.writeFileSync(
+      recordsPath,
+      JSON.stringify(
+        records,
+        (key, value) => {
+          if (key === "bought_at" && typeof value === "number") {
+            return value.toFixed(10);
+          }
+          return value;
+        },
+        2
+      ),
+      "utf8"
+    );
+    logBox("Records saved successfully.", "success");
   } catch (error) {
-    logBox(`Error saving records: ${error.message}`, 'error');
+    logBox(`Error saving records: ${error.message}`, "error");
   }
 };
 
@@ -94,15 +106,21 @@ const saveRecords = (records) => {
 const fetchCurrentPrice = async (mint, retries = 0) => {
   try {
     const response = await axios.get(`${API_URL}${mint}`);
-    logBox(`Fetched price for ${mint}: ${response.data.priceUsd}`, 'success');
+    logBox(`Fetched price for ${mint}: ${response.data.priceUsd}`, "success");
     return parseFloat(response.data.priceUsd);
   } catch (error) {
     if (retries < MAX_RETRIES) {
-      logBox(`Error fetching price for ${mint}. Retrying... (${retries + 1})`, 'warning');
+      logBox(
+        `Error fetching price for ${mint}. Retrying... (${retries + 1})`,
+        "warning"
+      );
       await new Promise((resolve) => setTimeout(resolve, 2000));
       return fetchCurrentPrice(mint, retries + 1);
     } else {
-      logBox(`Failed to fetch price for ${mint} after ${MAX_RETRIES} retries: ${error.message}`, 'error');
+      logBox(
+        `Failed to fetch price for ${mint} after ${MAX_RETRIES} retries: ${error.message}`,
+        "error"
+      );
       return null;
     }
   }
@@ -113,32 +131,38 @@ const sellTokenDirectly = async (amount, mint, type, retries = 0) => {
   try {
     const success = await sellToken(amount, mint);
     if (success) {
-      const messageType = type === 'TP' ? 'success' : 'info';
+      const messageType = type === "TP" ? "success" : "info";
       const logMessage = `${type} Hit: Sold ${mint}`;
       logBox(logMessage, messageType);
 
       const records = loadRecords();
       if (records && records[mint]) {
-        records[mint].status = 'sold';
+        records[mint].status = "sold";
         saveRecords(records);
       }
 
       return true;
     } else {
-      logBox('Failed to sell tokens', 'error');
+      logBox("Failed to sell tokens", "error");
       return false;
     }
   } catch (error) {
-    logBox(`Error selling token ${mint}: ${error.message}`, 'error');
+    logBox(`Error selling token ${mint}: ${error.message}`, "error");
     const records = loadRecords();
     if (retries < MAX_SELL_RETRIES) {
-      logBox(`Retrying sell operation for ${mint}... (${retries + 1})`, 'warning');
+      logBox(
+        `Retrying sell operation for ${mint}... (${retries + 1})`,
+        "warning"
+      );
       await new Promise((resolve) => setTimeout(resolve, 2000));
       return sellTokenDirectly(amount, mint, type, retries + 1);
     } else {
-      logBox(`Max retries reached for selling token ${mint}. Marking as failed.`, 'error');
+      logBox(
+        `Max retries reached for selling token ${mint}. Marking as failed.`,
+        "error"
+      );
       if (records && records[mint]) {
-        records[mint].status = 'failed';
+        records[mint].status = "failed";
         saveRecords(records);
       }
       return false;
@@ -148,7 +172,7 @@ const sellTokenDirectly = async (amount, mint, type, retries = 0) => {
 
 // Function to check and update the price of a token
 const checkAndUpdatePrice = async (mint, record) => {
-  logBox(`Checking price for ${mint}`, 'info');
+  logBox(`Checking price for ${mint}`, "info");
   const currentPrice = await fetchCurrentPrice(mint);
   if (currentPrice !== null) {
     const records = loadRecords();
@@ -160,21 +184,27 @@ const checkAndUpdatePrice = async (mint, record) => {
     const stopLossPrice = boughtAt * (1 - STOP_LOSS / 100);
 
     if (currentPrice >= takeProfitPrice) {
-      logBox(`Price target reached for ${mint}: Taking profit.`, 'success');
-      await sellTokenDirectly(record.tokens, mint, 'TP');
+      logBox(`Price target reached for ${mint}: Taking profit.`, "success");
+      await sellTokenDirectly(record.tokens, mint, "TP");
     } else if (currentPrice <= stopLossPrice) {
-      logBox(`Stop loss triggered for ${mint}: Selling token.`, 'warning');
-      await sellTokenDirectly(record.tokens, mint, 'SL');
+      logBox(`Stop loss triggered for ${mint}: Selling token.`, "warning");
+      await sellTokenDirectly(record.tokens, mint, "SL");
     } else {
-      logBox(`Current price for ${mint}: ${currentPrice}. No action taken.`, 'info');
+      logBox(
+        `Current price for ${mint}: ${currentPrice}. No action taken.`,
+        "info"
+      );
     }
   }
+
+  // Log balances after fetching price
+  await displayBalances();
 };
 
 // Function to monitor prices and trigger actions based on conditions
 const monitorPrices = async () => {
   try {
-    logBox('Starting price monitoring...', 'info');
+    logBox("Starting price monitoring...", "info");
     let records = loadRecords();
     while (records === null) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -185,16 +215,16 @@ const monitorPrices = async () => {
 
     for (const mint of mints) {
       const record = records[mint];
-      if (record.status === 'bought') {
+      if (record.status === "bought") {
         await checkAndUpdatePrice(mint, record);
         await new Promise((resolve) => setTimeout(resolve, PRICE_CHECK_DELAY));
       }
     }
 
-    logBox('Price monitoring cycle complete. Restarting...', 'info');
+    logBox("Price monitoring cycle complete. Restarting...", "info");
     setImmediate(monitorPrices); // Continue monitoring without blocking
   } catch (error) {
-    logBox(`Error in price monitoring: ${error.message}`, 'error');
+    logBox(`Error in price monitoring: ${error.message}`, "error");
   }
 };
 
@@ -203,10 +233,10 @@ const periodicBuy = async () => {
   try {
     const success = await buyToken(BUY_AMOUNT, TOKEN_ADDRESS);
     if (success) {
-      logBox(`Bought ${BUY_AMOUNT} of ${TOKEN_ADDRESS}`, 'success');
+      logBox(`Bought ${BUY_AMOUNT} of ${TOKEN_ADDRESS}`, "success");
     }
   } catch (error) {
-    logBox(`Error in periodic buy: ${error.message}`, 'error');
+    logBox(`Error in periodic buy: ${error.message}`, "error");
   }
 };
 
@@ -215,20 +245,38 @@ const periodicSell = async () => {
   try {
     const success = await sellToken(SELL_AMOUNT, TOKEN_ADDRESS);
     if (success) {
-      logBox(`Sold ${SELL_AMOUNT} of ${TOKEN_ADDRESS}`, 'success');
+      logBox(`Sold ${SELL_AMOUNT} of ${TOKEN_ADDRESS}`, "success");
     }
   } catch (error) {
-    logBox(`Error in periodic sell: ${error.message}`, 'error');
+    logBox(`Error in periodic sell: ${error.message}`, "error");
   }
 };
+
+// Display the initial balances
+const displayBalances = async () => {
+  try {
+    const solBalance = await checkSolanaBalance();
+    const tokenBalance = await checkTokenBalance(TOKEN_ADDRESS);
+    logBox(`Current SOL balance: ${solBalance}`, "info");
+    logBox(
+      `Current TOKEN balance: ${tokenBalance} for ${TOKEN_ADDRESS}`,
+      "info"
+    );
+  } catch (error) {
+    logBox(`Error fetching balances: ${error.message}`, "error");
+  }
+};
+
+// Initial display of balances
+await displayBalances();
 
 // Set intervals for buying and selling
 setInterval(periodicBuy, BUY_SECONDS);
 setInterval(periodicSell, SELL_SECONDS);
 
 // Global handler for unhandled promise rejections
-process.on('unhandledRejection', (reason, promise) => {
-  logBox(`Unhandled Rejection at: ${promise} reason: ${reason}`, 'error');
+process.on("unhandledRejection", (reason, promise) => {
+  logBox(`Unhandled Rejection at: ${promise} reason: ${reason}`, "error");
 });
 
 // Start monitoring prices
