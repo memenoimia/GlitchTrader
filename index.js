@@ -1,18 +1,16 @@
-const axios = require('axios');
-const dotenv = require('dotenv');
-const fs = require('fs');
-const path = require('path');
+import axios from 'axios';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import chalk from 'chalk';
+import { buyToken } from './src/buy.js';
+import { sellToken } from './src/sell.js';
 
+// Configure environment variables
 dotenv.config();
 
-// Initialize chalk as an ES module and then start monitoring
-let chalk;
-import('chalk').then((module) => {
-  chalk = module.default; // Use default export for chalk
-  monitorPrices();
-}).catch((error) => {
-  console.error('Error loading chalk:', error);
-});
+// Load token address from environment variables
+const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS;
 
 // Log environment variables for debugging
 console.log('Environment Variables Loaded:');
@@ -20,22 +18,28 @@ console.log(`PRICE_CHECK_DELAY: ${process.env.PRICE_CHECK_DELAY}`);
 console.log(`TAKE_PROFIT: ${process.env.TAKE_PROFIT}`);
 console.log(`STOP_LOSS: ${process.env.STOP_LOSS}`);
 console.log(`MAX_SELL_RETRIES: ${process.env.MAX_SELL_RETRIES}`);
+console.log(`BUY_AMOUNT: ${process.env.BUY_AMOUNT}`);
+console.log(`SELL_AMOUNT: ${process.env.SELL_AMOUNT}`);
+console.log(`BUY_SECONDS: ${process.env.BUY_SECONDS}`);
+console.log(`SELL_SECONDS: ${process.env.SELL_SECONDS}`);
+console.log(`BUY_SLIPPAGE: ${process.env.BUY_SLIPPAGE}`); // Log the buy slippage
+console.log(`SELL_SLIPPAGE: ${process.env.SELL_SLIPPAGE}`); // Log the sell slippage
+console.log(`Trading Token Address: ${TOKEN_ADDRESS}`); // Log the token address
 
 // Constant values fetched from the environment variables
 const PRICE_CHECK_DELAY = parseInt(process.env.PRICE_CHECK_DELAY);
 const TAKE_PROFIT = parseInt(process.env.TAKE_PROFIT);
 const STOP_LOSS = parseInt(process.env.STOP_LOSS);
 const MAX_SELL_RETRIES = parseInt(process.env.MAX_SELL_RETRIES);
+const BUY_AMOUNT = parseFloat(process.env.BUY_AMOUNT);
+const SELL_AMOUNT = parseFloat(process.env.SELL_AMOUNT);
+const BUY_SECONDS = parseInt(process.env.BUY_SECONDS) * 1000; // Convert to milliseconds
+const SELL_SECONDS = parseInt(process.env.SELL_SECONDS) * 1000; // Convert to milliseconds
 const API_URL = 'https://api.moonshot.cc/token/v1/solana/';
 const MAX_RETRIES = 3;
 
 // Function to log messages with color coding based on type
 const logBox = (message, type = 'info') => {
-  if (!chalk) {
-    console.log(message); // Fallback in case chalk is not initialized
-    return;
-  }
-
   let colorFunc;
   switch (type) {
     case 'success':
@@ -54,7 +58,7 @@ const logBox = (message, type = 'info') => {
 };
 
 // Determine file paths
-const recordsPath = path.resolve(__dirname, './records.json');
+const recordsPath = path.resolve('./records.json');
 
 // Function to load records from a JSON file
 const loadRecords = () => {
@@ -107,28 +111,14 @@ const fetchCurrentPrice = async (mint, retries = 0) => {
 // Function to directly sell a token
 const sellTokenDirectly = async (amount, mint, type, retries = 0) => {
   try {
-    const privateKey = process.env.PRIVATE_KEY;
-
-    const requestBody = {
-      private_key: privateKey,
-      mint: mint,
-      amount: amount,
-      microlamports: process.env.MICROLAMPORTS,
-      slippage: process.env.SLIPPAGE
-    };
-
-    const response = await axios.post('https://api.primeapis.com/moonshot/sell', requestBody);
-    const { status, sol, txid } = response.data;
-
-    if (status === 'success') {
+    const success = await sellToken(amount, mint);
+    if (success) {
       const messageType = type === 'TP' ? 'success' : 'info';
-      const logMessage = `${type} Hit: Sold ${mint} for ${sol} SOL. Transaction ID: ${txid}`;
+      const logMessage = `${type} Hit: Sold ${mint}`;
       logBox(logMessage, messageType);
 
       const records = loadRecords();
       if (records && records[mint]) {
-        const solNum = parseFloat(sol);
-        records[mint].sold_for = solNum;
         records[mint].status = 'sold';
         saveRecords(records);
       }
@@ -208,7 +198,38 @@ const monitorPrices = async () => {
   }
 };
 
+// Function to periodically buy tokens
+const periodicBuy = async () => {
+  try {
+    const success = await buyToken(BUY_AMOUNT, TOKEN_ADDRESS);
+    if (success) {
+      logBox(`Bought ${BUY_AMOUNT} of ${TOKEN_ADDRESS}`, 'success');
+    }
+  } catch (error) {
+    logBox(`Error in periodic buy: ${error.message}`, 'error');
+  }
+};
+
+// Function to periodically sell tokens
+const periodicSell = async () => {
+  try {
+    const success = await sellToken(SELL_AMOUNT, TOKEN_ADDRESS);
+    if (success) {
+      logBox(`Sold ${SELL_AMOUNT} of ${TOKEN_ADDRESS}`, 'success');
+    }
+  } catch (error) {
+    logBox(`Error in periodic sell: ${error.message}`, 'error');
+  }
+};
+
+// Set intervals for buying and selling
+setInterval(periodicBuy, BUY_SECONDS);
+setInterval(periodicSell, SELL_SECONDS);
+
 // Global handler for unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   logBox(`Unhandled Rejection at: ${promise} reason: ${reason}`, 'error');
 });
+
+// Start monitoring prices
+monitorPrices();
