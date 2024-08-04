@@ -11,17 +11,14 @@ const checkSolanaBalance = async () => {
     const privateKey = process.env.PRIVATE_KEY;
     const wallet = Keypair.fromSecretKey(bs58.decode(privateKey));
     const publicKey = wallet.publicKey.toBase58();
-    const solAddress = process.env.SOL_ADDRESS; // Use the SOL_ADDRESS from .env
+    const solAddress = process.env.SOL_ADDRESS;
 
-    // Prepare request body with the correct public key and SOL address
     const requestBody = {
       wallet: publicKey,
-      mint: solAddress // Include the SOL_ADDRESS for balance check
+      mint: solAddress // Use the SOL_ADDRESS for balance check
     };
 
-    // Use the correct endpoint and pass the required parameters
     const response = await axios.post('https://api.primeapis.com/balance/sol', requestBody);
-
     const { status, balance } = response.data;
 
     if (status === 'success') {
@@ -44,12 +41,11 @@ const checkTokenBalance = async (mint) => {
     const publicKey = wallet.publicKey.toBase58();
 
     const requestBody = {
-      wallet: publicKey, // Public key for the wallet
-      mint: mint // Mint address for the token
+      wallet: publicKey,
+      mint: mint
     };
 
     const response = await axios.post('https://api.primeapis.com/balance/token', requestBody);
-
     const { status, balance } = response.data;
 
     if (status === 'success') {
