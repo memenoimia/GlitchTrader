@@ -1,175 +1,55 @@
-import axios from 'axios';
-import dotenv from 'dotenv';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import chalk from 'chalk';
-import { eventEmitter } from '../index.js'; // Import the event emitter from index.js
+// Use CommonJS require statements for module imports
+const readline = require('readline');
+const fs = require('fs');
+const path = require('path');
 
-dotenv.config();
+// Create a readline interface for user input
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
 
-const PRICE_CHECK_DELAY = parseInt(process.env.PRICE_CHECK_DELAY);
-const TAKE_PROFIT = parseInt(process.env.TAKE_PROFIT);
-const STOP_LOSS = parseInt(process.env.STOP_LOSS);
-const MAX_SELL_RETRIES = parseInt(process.env.MAX_SELL_RETRIES);
-const API_URL = 'https://api.moonshot.cc/token/v1/solana/';
-const MAX_RETRIES = 3;
-
-const logBox = (message, type = 'info') => {
-  let colorFunc = chalk.white;
-  switch (type) {
-    case 'success':
-      colorFunc = chalk.green;
-      break;
-    case 'error':
-      colorFunc = chalk.red;
-      break;
-    case 'warning':
-      colorFunc = chalk.yellow;
-      break;
-    default:
-      colorFunc = chalk.white;
-  }
-  eventEmitter.emit('log', message, type); // Emit the log event
+// Function to prompt the user with a question and wait for an answer
+const askQuestion = (question) => {
+  return new Promise((resolve) => rl.question(question, resolve));
 };
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const recordsPath = path.resolve(__dirname, '../records.json');
+// Function to write environment variables to a .env file
+const writeEnvFile = (content) => {
+  const envPath = path.resolve(__dirname, '../.env');
+  fs.writeFileSync(envPath, content);
+};
 
-const loadRecords = () => {
+// Immediately Invoked Function Expression (IIFE) to setup environment variables
+(async () => {
   try {
-    const data = fs.readFileSync(recordsPath, 'utf8');
-    if (!data) {
-      return {};
-    }
-    return JSON.parse(data);
+    // Prompt user for various inputs
+    const privateKey = await askQuestion('Enter your private key: ');
+    const microlamports = await askQuestion('Enter fee lamports (e.g., 50000 or 500000): ');
+    const slippage = await askQuestion('Enter slippage tolerance (e.g., 100 for 1%): ');
+    const priceCheckDelay = await askQuestion('Enter delay for price check in milliseconds (1000 = 1 second): ');
+    const takeProfit = await askQuestion('Enter take profit (just the number, e.g., 10 or 20): ');
+    const stopLoss = await askQuestion('Enter stop loss (just the number, e.g., 10 or 20): ');
+    const maxSellRetries = await askQuestion('Enter the number of retry attempts for failed sell operations (e.g., 5 for default): ');
+
+    // Prepare content for the .env file
+    const envContent = `
+PRIVATE_KEY=${privateKey}
+MICROLAMPORTS=${microlamports}
+SLIPPAGE=${slippage}
+PRICE_CHECK_DELAY=${priceCheckDelay}
+TAKE_PROFIT=${takeProfit}
+STOP_LOSS=${stopLoss}
+MAX_SELL_RETRIES=${maxSellRetries}
+`;
+
+    // Write the .env file
+    writeEnvFile(envContent.trim());
+
+    console.log('.env is now configured');
   } catch (error) {
-    if (error.message.includes('Unexpected end of JSON input')) {
-      logBox('Error loading records: File is empty or not properly formatted. Waiting for records...', 'warning');
-    } else {
-      logBox(`Error loading records: ${error.message}`, 'error');
-    }
-    return null;
+    console.error('An error occurred:', error);
+  } finally {
+    rl.close(); // Close the readline interface
   }
-};
-
-const saveRecords = (records) => {
-  try {
-    fs.writeFileSync(recordsPath, JSON.stringify(records, (key, value) => {
-      if (key === 'bought_at' && typeof value === 'number') {
-        return value.toFixed(10); // Ensure bought_at is formatted as a fixed-point number
-      }
-      return value;
-    }, 2), 'utf8');
-  } catch (error) {
-    console.error('Error saving records:', error.message);
-  }
-};
-
-const fetchCurrentPrice = async (mint, retries = 0) => {
-  try {
-    const response = await axios.get(`${API_URL}${mint}`);
-    return parseFloat(response.data.priceUsd);
-  } catch (error) {
-    if (retries < MAX_RETRIES) {
-      logBox(`Error fetching price for ${mint}. Retrying... (${retries + 1})`, 'warning');
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      return fetchCurrentPrice(mint, retries + 1);
-    } else {
-      logBox(`Error fetching price for ${mint}: ${error.message}`, 'error');
-      return null;
-    }
-  }
-};
-
-const sellTokenDirectly = async (amount, mint, type, retries = 0) => {
-  try {
-    const privateKey = process.env.PRIVATE_KEY;
-
-    const requestBody = {
-      private_key: privateKey,
-      mint: mint,
-      amount: amount,
-      microlamports: process.env.MICROLAMPORTS,
-      slippage: process.env.SLIPPAGE
-    };
-
-    const response = await axios.post('https://api.primeapis.com/moonshot/sell', requestBody);
-    const { status, sol, txid } = response.data;
-
-    if (status === 'success') {
-      const messageType = type === 'TP' ? 'success' : 'error';
-      const logMessage = `${type} Hit: Sold: ${mint} : For ${sol} SOL. Signature: ${txid}`;
-      logBox(logMessage, messageType);
-
-      const records = loadRecords();
-      if (records && records[mint]) {
-        const solNum = parseFloat(sol);
-        records[mint].sold_for = solNum;
-        records[mint].status = 'sold';
-        saveRecords(records);
-      }
-
-      return true;
-    } else {
-      logBox('Failed to sell tokens', 'error');
-      return false;
-    }
-  } catch (error) {
-    const records = loadRecords();
-    if (retries < MAX_SELL_RETRIES) {
-      logBox(`Error selling tokens. Retrying... (${retries + 1})`, 'warning');
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      return sellTokenDirectly(amount, mint, type, retries + 1);
-    } else {
-      logBox(`Max retries reached for selling token ${mint}. Marking as failed.`, 'error');
-      if (records && records[mint]) {
-        records[mint].status = 'failed';
-        saveRecords(records);
-      }
-      return false;
-    }
-  }
-};
-
-const checkAndUpdatePrice = async (mint, record) => {
-  const currentPrice = await fetchCurrentPrice(mint);
-  if (currentPrice !== null) {
-    const records = loadRecords();
-    records[mint].price = currentPrice;
-    saveRecords(records);
-
-    const boughtAt = parseFloat(record.bought_at);
-    const takeProfitPrice = boughtAt * (1 + TAKE_PROFIT / 100);
-    const stopLossPrice = boughtAt * (1 - STOP_LOSS / 100);
-
-    if (currentPrice >= takeProfitPrice) {
-      await sellTokenDirectly(record.tokens, mint, 'TP');
-    } else if (currentPrice <= stopLossPrice) {
-      await sellTokenDirectly(record.tokens, mint, 'SL');
-    }
-  }
-};
-
-const monitorPrices = async () => {
-  let records = loadRecords();
-  while (records === null) {
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-    records = loadRecords();
-  }
-
-  const mints = Object.keys(records);
-
-  for (const mint of mints) {
-    const record = records[mint];
-    if (record.status === 'bought') {
-      await checkAndUpdatePrice(mint, record);
-      await new Promise((resolve) => setTimeout(resolve, PRICE_CHECK_DELAY));
-    }
-  }
-
-  setImmediate(monitorPrices);
-};
-
-monitorPrices();
+})();
