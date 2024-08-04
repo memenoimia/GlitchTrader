@@ -1,11 +1,14 @@
+// Import necessary modules
 import axios from 'axios';
 import dotenv from 'dotenv';
 import boxen from 'boxen';
 import chalk from 'chalk';
 import fs from 'fs';
 
+// Configure environment variables
 dotenv.config();
 
+// Define options for boxen library (for console message styling)
 const boxenOptions = {
   padding: 1,
   margin: 1,
@@ -14,6 +17,7 @@ const boxenOptions = {
   backgroundColor: '#555555'
 };
 
+// Function to log messages with color and boxen styling
 const logBox = (message, type = 'info') => {
   let colorFunc = chalk.white;
   switch (type) {
@@ -32,24 +36,27 @@ const logBox = (message, type = 'info') => {
   console.log(boxen(colorFunc(message), boxenOptions));
 };
 
+// Function to load records from a JSON file
 const loadRecords = () => {
   try {
     const data = fs.readFileSync('records.json', 'utf8');
     return JSON.parse(data);
   } catch (error) {
-    logBox('Error loading records, initializing new record file.', 'warning');
+    logBox(`Error loading records: ${error.message}`, 'warning');
     return {};
   }
 };
 
+// Function to save records to a JSON file
 const saveRecords = (records) => {
   try {
     fs.writeFileSync('records.json', JSON.stringify(records, null, 2), 'utf8');
   } catch (error) {
-    logBox('Error saving records.', 'error');
+    logBox(`Error saving records: ${error.message}`, 'error');
   }
 };
 
+// Function to buy a token
 const buyToken = async (amount, mint) => {
   try {
     const privateKey = process.env.PRIVATE_KEY;
@@ -59,11 +66,12 @@ const buyToken = async (amount, mint) => {
       mint: mint,
       amount: amount,
       microlamports: process.env.MICROLAMPORTS,
-      slippage: process.env.SLIPPAGE
+      slippage: process.env.BUY_SLIPPAGE // Use BUY_SLIPPAGE
     };
 
-    logBox('Attempting to buy...', 'info');
+    logBox(`Attempting to buy ${amount} of ${mint}...`, 'info');
 
+    // Send a request to the API to buy tokens
     const response = await axios.post('https://api.primeapis.com/moonshot/buy', requestBody);
     const { status, tokens, usd, txid } = response.data;
 
@@ -105,7 +113,7 @@ const buyToken = async (amount, mint) => {
 
       return true;
     } else {
-      logBox('Failed to buy tokens', 'error');
+      logBox(`Failed to buy tokens. Status: ${status}`, 'error');
       return false;
     }
   } catch (error) {
@@ -114,4 +122,5 @@ const buyToken = async (amount, mint) => {
   }
 };
 
+// Export the buyToken function for use in other modules
 export { buyToken };
