@@ -1,23 +1,13 @@
 // Import necessary modules
 import axios from 'axios';
 import dotenv from 'dotenv';
-import boxen from 'boxen';
 import chalk from 'chalk';
 import fs from 'fs';
 
 // Configure environment variables
 dotenv.config();
 
-// Define options for boxen library (for console message styling)
-const boxenOptions = {
-  padding: 1,
-  margin: 1,
-  borderStyle: 'round',
-  borderColor: 'green',
-  backgroundColor: '#555555'
-};
-
-// Function to log messages with color and boxen styling
+// Function to log messages with color and styling
 const logBox = (message, type = 'info') => {
   let colorFunc = chalk.white;
   switch (type) {
@@ -33,7 +23,7 @@ const logBox = (message, type = 'info') => {
     default:
       colorFunc = chalk.white;
   }
-  console.log(boxen(colorFunc(message), boxenOptions));
+  console.log(colorFunc(message));
 };
 
 // Function to load records from a JSON file
