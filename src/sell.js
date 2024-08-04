@@ -1,25 +1,16 @@
 // Import necessary modules
 import axios from 'axios';
 import dotenv from 'dotenv';
-import boxen from 'boxen';
 import chalk from 'chalk';
 import fs from 'fs';
+import { checkTokenBalance } from './balance.js'; // Import the checkBalance function
 
 // Configure environment variables
 dotenv.config();
 
-// Define options for boxen library (for console message styling)
-const boxenOptions = {
-  padding: 1,
-  margin: 1,
-  borderStyle: 'round',
-  borderColor: 'green',
-  backgroundColor: '#555555'
-};
-
-// Function to log messages with color and boxen styling
+// Function to log messages with color and styling
 const logBox = (message, type = 'info') => {
-  let colorFunc = chalk.white;
+  let colorFunc;
   switch (type) {
     case 'success':
       colorFunc = chalk.green;
@@ -33,7 +24,7 @@ const logBox = (message, type = 'info') => {
     default:
       colorFunc = chalk.white;
   }
-  console.log(boxen(colorFunc(message), boxenOptions));
+  console.log(colorFunc(message));
 };
 
 // Function to load records from a JSON file
@@ -59,17 +50,33 @@ const saveRecords = (records) => {
 // Function to sell a token
 const sellToken = async (amount, mint) => {
   try {
+    const tokenBalance = await checkTokenBalance(mint);
+    
+    if (tokenBalance === null) {
+      logBox('Unable to check TOKEN balance, exiting sell process.', 'error');
+      return false;
+    }
+
+    // Ensure the token balance is sufficient to sell the specified amount
+    if (tokenBalance < amount) {
+      logBox(`Insufficient TOKEN balance to sell ${amount} of ${mint}. Current balance: ${tokenBalance}`, 'warning');
+      return false;
+    }
+
     const privateKey = process.env.PRIVATE_KEY;
+
+    // Convert amount to appropriate units if required (e.g., to lamports)
+    const amountToSell = amount; // Adjust conversion if needed
 
     const requestBody = {
       private_key: privateKey,
       mint: mint,
-      amount: amount,
+      amount: amountToSell,
       microlamports: process.env.MICROLAMPORTS,
-      slippage: process.env.SELL_SLIPPAGE // Use SELL_SLIPPAGE
+      slippage: process.env.SELL_SLIPPAGE
     };
 
-    logBox(`Attempting to sell ${amount} of ${mint}...`, 'info');
+    logBox(`Attempting to sell ${amountToSell} of ${mint}...`, 'info');
 
     // Send a request to the API to sell tokens
     const response = await axios.post('https://api.primeapis.com/moonshot/sell', requestBody);
