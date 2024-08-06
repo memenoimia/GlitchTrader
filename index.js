@@ -127,9 +127,9 @@ const fetchCurrentPrice = async (mint, retries = 0) => {
 };
 
 // Function to directly sell a token
-const sellTokenDirectly = async (amount, mint, type, retries = 0) => {
+const sellTokenDirectly = async (amountSol, mint, type, retries = 0) => {
   try {
-    const success = await sellToken(amount, mint);
+    const success = await sellToken(amountSol, mint);
     if (success) {
       const messageType = type === "TP" ? "success" : "info";
       const logMessage = `${type} Hit: Sold ${mint}`;
@@ -155,7 +155,7 @@ const sellTokenDirectly = async (amount, mint, type, retries = 0) => {
         "warning"
       );
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      return sellTokenDirectly(amount, mint, type, retries + 1);
+      return sellTokenDirectly(amountSol, mint, type, retries + 1);
     } else {
       logBox(
         `Max retries reached for selling token ${mint}. Marking as failed.`,
@@ -183,12 +183,15 @@ const checkAndUpdatePrice = async (mint, record) => {
     const takeProfitPrice = boughtAt * (1 + TAKE_PROFIT / 100);
     const stopLossPrice = boughtAt * (1 - STOP_LOSS / 100);
 
+    // Display the current balances
+    await displayBalances();
+
     if (currentPrice >= takeProfitPrice) {
       logBox(`Price target reached for ${mint}: Taking profit.`, "success");
-      await sellTokenDirectly(record.tokens, mint, "TP");
+      await sellTokenDirectly(SELL_AMOUNT, mint, "TP");
     } else if (currentPrice <= stopLossPrice) {
       logBox(`Stop loss triggered for ${mint}: Selling token.`, "warning");
-      await sellTokenDirectly(record.tokens, mint, "SL");
+      await sellTokenDirectly(SELL_AMOUNT, mint, "SL");
     } else {
       logBox(
         `Current price for ${mint}: ${currentPrice}. No action taken.`,
@@ -196,9 +199,6 @@ const checkAndUpdatePrice = async (mint, record) => {
       );
     }
   }
-
-  // Log balances after fetching price
-  await displayBalances();
 };
 
 // Function to monitor prices and trigger actions based on conditions
@@ -252,7 +252,7 @@ const periodicSell = async () => {
   }
 };
 
-// Display the initial balances
+// Display the current balances
 const displayBalances = async () => {
   try {
     const solBalance = await checkSolanaBalance();
