@@ -7,13 +7,10 @@ import { buyToken } from "./src/buy.js";
 import { sellToken } from "./src/sell.js";
 import { checkSolanaBalance, checkTokenBalance } from "./src/balance.js";
 
-// Configure environment variables
 dotenv.config();
 
-// Load token address from environment variables
 const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS;
 
-// Log environment variables for debugging
 console.log("Environment Variables Loaded:");
 console.log(`PRICE_CHECK_DELAY: ${process.env.PRICE_CHECK_DELAY}`);
 console.log(`TAKE_PROFIT: ${process.env.TAKE_PROFIT}`);
@@ -27,10 +24,9 @@ console.log(`BUY_SLIPPAGE: ${process.env.BUY_SLIPPAGE}`);
 console.log(`SELL_SLIPPAGE: ${process.env.SELL_SLIPPAGE}`);
 console.log(`Trading Token Address: ${TOKEN_ADDRESS}`);
 
-// Constant values fetched from the environment variables
 const PRICE_CHECK_DELAY = parseInt(process.env.PRICE_CHECK_DELAY);
-const TAKE_PROFIT = parseInt(process.env.TAKE_PROFIT);
-const STOP_LOSS = parseInt(process.env.STOP_LOSS);
+const TAKE_PROFIT = parseFloat(process.env.TAKE_PROFIT);
+const STOP_LOSS = parseFloat(process.env.STOP_LOSS);
 const MAX_SELL_RETRIES = parseInt(process.env.MAX_SELL_RETRIES);
 const BUY_AMOUNT = parseFloat(process.env.BUY_AMOUNT);
 const SELL_AMOUNT = parseFloat(process.env.SELL_AMOUNT);
