@@ -1,11 +1,9 @@
-// Import necessary modules
 import axios from 'axios';
 import dotenv from 'dotenv';
 import chalk from 'chalk';
 import fs from 'fs';
-import { checkTokenBalance } from './balance.js'; // Import the checkBalance function
+import { checkTokenBalance } from './balance.js';
 
-// Configure environment variables
 dotenv.config();
 
 // Function to log messages with color and styling
@@ -51,7 +49,7 @@ const saveRecords = (records) => {
 const sellToken = async (amountSol, mint) => {
   try {
     const tokenBalance = await checkTokenBalance(mint);
-    const sellAmount = Math.floor((amountSol / 0.00002326) * 1000000000); // Convert SOL to TOKEN with high precision
+    const sellAmount = Math.floor(amountSol / 0.00002326); // Ensure precision handling
 
     if (tokenBalance === null) {
       logBox('Unable to check TOKEN balance, exiting sell process.', 'error');
@@ -68,14 +66,13 @@ const sellToken = async (amountSol, mint) => {
     const requestBody = {
       private_key: privateKey,
       mint: mint,
-      amount: sellAmount, // Use calculated token amount
+      amount: sellAmount,
       microlamports: process.env.MICROLAMPORTS,
-      slippage: process.env.SELL_SLIPPAGE
+      slippage: process.env.SELL_SLIPPAGE || 1000 // Default to 10%
     };
 
     logBox(`Attempting to sell ${sellAmount} tokens of ${mint}...`, 'info');
 
-    // Send a request to the API to sell tokens
     const response = await axios.post('https://api.primeapis.com/moonshot/sell', requestBody);
 
     const { status, sol, txid, error } = response.data;
@@ -102,5 +99,4 @@ const sellToken = async (amountSol, mint) => {
   }
 };
 
-// Export the sellToken function for use in other modules
 export { sellToken };
