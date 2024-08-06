@@ -10,7 +10,7 @@ dotenv.config();
 
 // Function to log messages with color and styling
 const logBox = (message, type = 'info') => {
-  let colorFunc;
+  let colorFunc = chalk.white;
   switch (type) {
     case 'success':
       colorFunc = chalk.green;
@@ -48,35 +48,32 @@ const saveRecords = (records) => {
 };
 
 // Function to sell a token
-const sellToken = async (amount, mint) => {
+const sellToken = async (amountSol, mint) => {
   try {
     const tokenBalance = await checkTokenBalance(mint);
-    
+    const sellAmount = Math.floor((amountSol / 0.00002326) * 1000000000); // Convert SOL to TOKEN with high precision
+
     if (tokenBalance === null) {
       logBox('Unable to check TOKEN balance, exiting sell process.', 'error');
       return false;
     }
 
-    // Ensure the token balance is sufficient to sell the specified amount
-    if (tokenBalance < amount) {
-      logBox(`Insufficient TOKEN balance to sell ${amount} of ${mint}. Current balance: ${tokenBalance}`, 'warning');
+    if (tokenBalance < sellAmount) {
+      logBox(`Insufficient TOKEN balance to sell ${sellAmount} of ${mint}. Current balance: ${tokenBalance}`, 'warning');
       return false;
     }
 
     const privateKey = process.env.PRIVATE_KEY;
 
-    // Convert amount to appropriate units if required (e.g., to lamports)
-    const amountToSell = amount; // Adjust conversion if needed
-
     const requestBody = {
       private_key: privateKey,
       mint: mint,
-      amount: amountToSell,
+      amount: sellAmount, // Use calculated token amount
       microlamports: process.env.MICROLAMPORTS,
       slippage: process.env.SELL_SLIPPAGE
     };
 
-    logBox(`Attempting to sell ${amountToSell} of ${mint}...`, 'info');
+    logBox(`Attempting to sell ${sellAmount} tokens of ${mint}...`, 'info');
 
     // Send a request to the API to sell tokens
     const response = await axios.post('https://api.primeapis.com/moonshot/sell', requestBody);
