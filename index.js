@@ -359,3 +359,4 @@ process.on("unhandledRejection", (reason, promise) => {
 
 // Start monitoring prices
 monitorPrices();
+ 
