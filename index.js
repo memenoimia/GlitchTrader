@@ -7,10 +7,14 @@ import { buyToken } from "./src/buy.js";
 import { sellToken } from "./src/sell.js";
 import { checkSolanaBalance, checkTokenBalance } from "./src/balance.js";
 
+// Load environment variables from .env file
 dotenv.config();
 
+// Load environment variables
+const BOT_ON = process.env.BOT_ON === "true"; // Convert string to boolean
 const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS;
 
+// Log loaded environment variables for debugging
 console.log("Environment Variables Loaded:");
 console.log(`PRICE_CHECK_DELAY: ${process.env.PRICE_CHECK_DELAY}`);
 console.log(`TAKE_PROFIT: ${process.env.TAKE_PROFIT}`);
@@ -23,7 +27,9 @@ console.log(`SELL_SECONDS: ${process.env.SELL_SECONDS}`);
 console.log(`BUY_SLIPPAGE: ${process.env.BUY_SLIPPAGE}`);
 console.log(`SELL_SLIPPAGE: ${process.env.SELL_SLIPPAGE}`);
 console.log(`Trading Token Address: ${TOKEN_ADDRESS}`);
+console.log(`BOT_ON: ${BOT_ON}`); // Log BOT_ON status
 
+// Parse environment variables for use in calculations
 const PRICE_CHECK_DELAY = parseInt(process.env.PRICE_CHECK_DELAY);
 const TAKE_PROFIT = parseFloat(process.env.TAKE_PROFIT);
 const STOP_LOSS = parseFloat(process.env.STOP_LOSS);
@@ -51,7 +57,7 @@ const logBox = (message, type = "info") => {
     default:
       colorFunc = chalk.white;
   }
-  console.log(colorFunc(message));
+  console.log(colorFunc(`[${new Date().toISOString()}] ${message}`)); // Add timestamp for better debugging
 };
 
 // Determine file paths
@@ -137,6 +143,9 @@ const sellTokenDirectly = async (amountSol, mint, type, retries = 0) => {
         saveRecords(records);
       }
 
+      // Display balances after selling
+      await displayBalances();
+
       return true;
     } else {
       logBox("Failed to sell tokens", "error");
@@ -179,6 +188,11 @@ const checkAndUpdatePrice = async (mint, record) => {
     const takeProfitPrice = boughtAt * (1 + TAKE_PROFIT / 100);
     const stopLossPrice = boughtAt * (1 - STOP_LOSS / 100);
 
+    logBox(
+      `Current price: ${currentPrice}, Take Profit: ${takeProfitPrice}, Stop Loss: ${stopLossPrice}`,
+      "info"
+    );
+
     // Display the current balances
     await displayBalances();
 
@@ -199,26 +213,42 @@ const checkAndUpdatePrice = async (mint, record) => {
 
 // Function to monitor prices and trigger actions based on conditions
 const monitorPrices = async () => {
+  if (!BOT_ON) {
+    logBox("Trading is currently disabled.", "info");
+    return;
+  }
+
   try {
     logBox("Starting price monitoring...", "info");
     let records = loadRecords();
     while (records === null) {
+      // Wait before retrying to load records to prevent tight looping
       await new Promise((resolve) => setTimeout(resolve, 5000));
       records = loadRecords();
     }
 
-    const mints = Object.keys(records);
+    // Check if there are any records to process
+    if (Object.keys(records).length === 0) {
+      logBox("No records found. Waiting before next cycle...", "info");
+      await new Promise((resolve) => setTimeout(resolve, PRICE_CHECK_DELAY));
+    } else {
+      const mints = Object.keys(records);
 
-    for (const mint of mints) {
-      const record = records[mint];
-      if (record.status === "bought") {
-        await checkAndUpdatePrice(mint, record);
-        await new Promise((resolve) => setTimeout(resolve, PRICE_CHECK_DELAY));
+      for (const mint of mints) {
+        const record = records[mint];
+        if (record.status === "bought") {
+          await checkAndUpdatePrice(mint, record);
+          await new Promise((resolve) =>
+            setTimeout(resolve, PRICE_CHECK_DELAY)
+          );
+        }
       }
+
+      logBox("Price monitoring cycle complete. Restarting...", "info");
     }
 
-    logBox("Price monitoring cycle complete. Restarting...", "info");
-    setImmediate(monitorPrices); // Continue monitoring without blocking
+    // Restart monitoring after a delay to prevent immediate looping
+    setTimeout(monitorPrices, PRICE_CHECK_DELAY);
   } catch (error) {
     logBox(`Error in price monitoring: ${error.message}`, "error");
   }
@@ -226,25 +256,49 @@ const monitorPrices = async () => {
 
 // Function to periodically buy tokens
 const periodicBuy = async () => {
+  if (!BOT_ON) {
+    logBox("Trading is currently disabled.", "info");
+    return;
+  }
+
   try {
+    logBox(`Attempting to buy ${BUY_AMOUNT} of ${TOKEN_ADDRESS}...`, "info");
     const success = await buyToken(BUY_AMOUNT, TOKEN_ADDRESS);
     if (success) {
       logBox(`Bought ${BUY_AMOUNT} of ${TOKEN_ADDRESS}`, "success");
+
+      // Display balances after buying
+      await displayBalances();
     }
   } catch (error) {
-    logBox(`Error in periodic buy: ${error.message}`, "error");
+    logBox(
+      `An error occurred while trying to buy tokens: ${error.message}`,
+      "error"
+    );
   }
 };
 
 // Function to periodically sell tokens
 const periodicSell = async () => {
+  if (!BOT_ON) {
+    logBox("Trading is currently disabled.", "info");
+    return;
+  }
+
   try {
+    logBox(`Attempting to sell ${SELL_AMOUNT} of ${TOKEN_ADDRESS}...`, "info");
     const success = await sellToken(SELL_AMOUNT, TOKEN_ADDRESS);
     if (success) {
       logBox(`Sold ${SELL_AMOUNT} of ${TOKEN_ADDRESS}`, "success");
+
+      // Display balances after selling
+      await displayBalances();
     }
   } catch (error) {
-    logBox(`Error in periodic sell: ${error.message}`, "error");
+    logBox(
+      `An error occurred while trying to sell tokens: ${error.message}`,
+      "error"
+    );
   }
 };
 
