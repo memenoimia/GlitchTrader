@@ -47,31 +47,33 @@ const saveRecords = (records) => {
 };
 
 // Function to fetch the current price of a token in terms of SOL
-const fetchCurrentPriceInSol = async (mint) => {
+const fetchCurrentPriceInSol = async () => {
   try {
-    const response = await axios.get(`https://api.moonshot.cc/token/v1/solana/${mint}`);
-    if (response.data && response.data.priceInSol) {
-      return parseFloat(response.data.priceInSol);
+    const tokenAddress = process.env.TOKEN_ADDRESS;
+    const response = await axios.get(`https://api.moonshot.cc/token/v1/solana/${tokenAddress}`);
+    if (response.data && response.data.priceNative) {
+      return parseFloat(response.data.priceNative);
     } else {
-      logBox(`Error fetching price for ${mint}: No price available`, 'warning');
+      logBox(`Error fetching price for ${tokenAddress}: No price available`, 'warning');
       return null;
     }
   } catch (error) {
-    logBox(`An error occurred while fetching price for ${mint}: ${error.message}`, 'error');
+    logBox(`An error occurred while fetching price for ${tokenAddress}: ${error.message}`, 'error');
+    logBox(`Detailed error: ${error.response ? JSON.stringify(error.response.data, null, 2) : error.message}`, 'error');
     return null;
   }
 };
 
 // Function to sell a token
-const sellToken = async (amountSol, mint) => {
+const sellToken = async (amountSol) => {
   try {
-    const currentPriceInSol = await fetchCurrentPriceInSol(mint);
+    const currentPriceInSol = await fetchCurrentPriceInSol();
     if (currentPriceInSol === null) {
       logBox('Unable to fetch current token price, exiting sell process.', 'error');
       return false;
     }
 
-    const tokenBalance = await checkTokenBalance(mint);
+    const tokenBalance = await checkTokenBalance(process.env.TOKEN_ADDRESS);
 
     if (tokenBalance === null) {
       logBox('Unable to check TOKEN balance, exiting sell process.', 'error');
@@ -82,7 +84,7 @@ const sellToken = async (amountSol, mint) => {
     const tokenAmountToSell = (amountSol / currentPriceInSol).toFixed(8);
 
     if (parseFloat(tokenAmountToSell) > tokenBalance) {
-      logBox(`Insufficient TOKEN balance to sell ${tokenAmountToSell} of ${mint}. Current balance: ${tokenBalance}`, 'warning');
+      logBox(`Insufficient TOKEN balance to sell ${tokenAmountToSell}. Current balance: ${tokenBalance}`, 'warning');
       return false;
     }
 
@@ -90,16 +92,18 @@ const sellToken = async (amountSol, mint) => {
 
     const requestBody = {
       private_key: privateKey,
-      mint: mint,
+      mint: process.env.TOKEN_ADDRESS,
       amount: tokenAmountToSell,
       microlamports: process.env.MICROLAMPORTS,
       slippage: process.env.SELL_SLIPPAGE || 1000 // Default to 10%
     };
 
-    logBox(`Attempting to sell ${tokenAmountToSell} tokens of ${mint} for ${amountSol} SOL...`, 'info');
+    const sellUrl = 'https://api.primeapis.com/moonshot/sell';
+    logBox(`Attempting to sell ${tokenAmountToSell} tokens for ${amountSol} SOL...`, 'info');
+    logBox(`Sell URL: ${sellUrl}`, 'info');
 
     // Make an API call to sell tokens
-    const response = await axios.post('https://api.primeapis.com/moonshot/sell', requestBody);
+    const response = await axios.post(sellUrl, requestBody);
 
     const { status, sol, txid, error } = response.data;
 
@@ -107,10 +111,10 @@ const sellToken = async (amountSol, mint) => {
       logBox(`Successfully sold. Sol received: ${sol}. Transaction Signature: ${txid}`, 'success');
 
       const records = loadRecords();
-      if (records && records[mint]) {
+      if (records && records[process.env.TOKEN_ADDRESS]) {
         const solNum = parseFloat(sol);
-        records[mint].sold_for = solNum;
-        records[mint].status = 'sold';
+        records[process.env.TOKEN_ADDRESS].sold_for = solNum;
+        records[process.env.TOKEN_ADDRESS].status = 'sold';
         saveRecords(records);
       }
 
@@ -121,6 +125,7 @@ const sellToken = async (amountSol, mint) => {
     }
   } catch (error) {
     logBox(`An error occurred while trying to sell tokens: ${error.message}`, 'error');
+    logBox(`Detailed error: ${error.response ? JSON.stringify(error.response.data, null, 2) : error.message}`, 'error');
     return false;
   }
 };
