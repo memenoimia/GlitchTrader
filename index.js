@@ -129,17 +129,17 @@ const fetchCurrentPrice = async (mint, retries = 0) => {
 };
 
 // Function to directly sell a token
-const sellTokenDirectly = async (amountSol, mint, type, retries = 0) => {
+const sellTokenDirectly = async (amountSol, type, retries = 0) => {
   try {
-    const success = await sellToken(amountSol, mint);
+    const success = await sellToken(amountSol);
     if (success) {
       const messageType = type === "TP" ? "success" : "info";
-      const logMessage = `${type} Hit: Sold ${mint}`;
+      const logMessage = `${type} Hit: Sold ${process.env.TOKEN_ADDRESS}`;
       logBox(logMessage, messageType);
 
       const records = loadRecords();
-      if (records && records[mint]) {
-        records[mint].status = "sold";
+      if (records && records[process.env.TOKEN_ADDRESS]) {
+        records[process.env.TOKEN_ADDRESS].status = "sold";
         saveRecords(records);
       }
 
@@ -152,22 +152,27 @@ const sellTokenDirectly = async (amountSol, mint, type, retries = 0) => {
       return false;
     }
   } catch (error) {
-    logBox(`Error selling token ${mint}: ${error.message}`, "error");
+    logBox(
+      `Error selling token ${process.env.TOKEN_ADDRESS}: ${error.message}`,
+      "error"
+    );
     const records = loadRecords();
     if (retries < MAX_SELL_RETRIES) {
       logBox(
-        `Retrying sell operation for ${mint}... (${retries + 1})`,
+        `Retrying sell operation for ${process.env.TOKEN_ADDRESS}... (${
+          retries + 1
+        })`,
         "warning"
       );
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      return sellTokenDirectly(amountSol, mint, type, retries + 1);
+      return sellTokenDirectly(amountSol, type, retries + 1);
     } else {
       logBox(
-        `Max retries reached for selling token ${mint}. Marking as failed.`,
+        `Max retries reached for selling token ${process.env.TOKEN_ADDRESS}. Marking as failed.`,
         "error"
       );
-      if (records && records[mint]) {
-        records[mint].status = "failed";
+      if (records && records[process.env.TOKEN_ADDRESS]) {
+        records[process.env.TOKEN_ADDRESS].status = "failed";
         saveRecords(records);
       }
       return false;
@@ -198,10 +203,10 @@ const checkAndUpdatePrice = async (mint, record) => {
 
     if (currentPrice >= takeProfitPrice) {
       logBox(`Price target reached for ${mint}: Taking profit.`, "success");
-      await sellTokenDirectly(SELL_AMOUNT, mint, "TP");
+      await sellTokenDirectly(SELL_AMOUNT, "TP");
     } else if (currentPrice <= stopLossPrice) {
       logBox(`Stop loss triggered for ${mint}: Selling token.`, "warning");
-      await sellTokenDirectly(SELL_AMOUNT, mint, "SL");
+      await sellTokenDirectly(SELL_AMOUNT, "SL");
     } else {
       logBox(
         `Current price for ${mint}: ${currentPrice}. No action taken.`,
@@ -254,6 +259,9 @@ const monitorPrices = async () => {
   }
 };
 
+// Lock variable to prevent overlapping calls
+let isBuying = false;
+
 // Function to periodically buy tokens
 const periodicBuy = async () => {
   if (!BOT_ON) {
@@ -261,7 +269,25 @@ const periodicBuy = async () => {
     return;
   }
 
+  if (isBuying) {
+    logBox("Buy function already in process, skipping this call.", "warning");
+    return;
+  }
+
+  isBuying = true;
+
   try {
+    // Check SOL balance before attempting to buy tokens
+    const solBalance = await checkSolanaBalance();
+    if (solBalance < BUY_AMOUNT) {
+      logBox(
+        "Insufficient SOL balance to proceed with buying tokens.",
+        "error"
+      );
+      isBuying = false;
+      return;
+    }
+
     logBox(`Attempting to buy ${BUY_AMOUNT} of ${TOKEN_ADDRESS}...`, "info");
     const success = await buyToken(BUY_AMOUNT, TOKEN_ADDRESS);
     if (success) {
@@ -275,6 +301,8 @@ const periodicBuy = async () => {
       `An error occurred while trying to buy tokens: ${error.message}`,
       "error"
     );
+  } finally {
+    isBuying = false;
   }
 };
 
@@ -287,7 +315,7 @@ const periodicSell = async () => {
 
   try {
     logBox(`Attempting to sell ${SELL_AMOUNT} of ${TOKEN_ADDRESS}...`, "info");
-    const success = await sellToken(SELL_AMOUNT, TOKEN_ADDRESS);
+    const success = await sellToken(SELL_AMOUNT);
     if (success) {
       logBox(`Sold ${SELL_AMOUNT} of ${TOKEN_ADDRESS}`, "success");
 
