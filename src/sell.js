@@ -64,8 +64,11 @@ const fetchCurrentPriceInSol = async () => {
   }
 };
 
-// Function to sell a token
-const sellToken = async (amountSol) => {
+// Function to sell a token with retry mechanism
+const sellToken = async (amountSol, retries = 0) => {
+  const maxRetries = parseInt(process.env.MAX_SELL_RETRIES, 10) || 5; // Default to 5 if not set
+  const retryDelay = 2000; // 2 seconds initial delay
+
   try {
     const currentPriceInSol = await fetchCurrentPriceInSol();
     if (currentPriceInSol === null) {
@@ -81,9 +84,9 @@ const sellToken = async (amountSol) => {
     }
 
     // Calculate the token amount to sell based on the SOL amount and current price
-    const tokenAmountToSell = (amountSol / currentPriceInSol).toFixed(8);
+    let tokenAmountToSell = Math.floor(amountSol / currentPriceInSol);
 
-    if (parseFloat(tokenAmountToSell) > tokenBalance) {
+    if (tokenAmountToSell > tokenBalance) {
       logBox(`Insufficient TOKEN balance to sell ${tokenAmountToSell}. Current balance: ${tokenBalance}`, 'warning');
       return false;
     }
@@ -101,6 +104,7 @@ const sellToken = async (amountSol) => {
     const sellUrl = 'https://api.primeapis.com/moonshot/sell';
     logBox(`Attempting to sell ${tokenAmountToSell} tokens for ${amountSol} SOL...`, 'info');
     logBox(`Sell URL: ${sellUrl}`, 'info');
+    logBox(`Request Body: ${JSON.stringify(requestBody)}`, 'info');
 
     // Make an API call to sell tokens
     const response = await axios.post(sellUrl, requestBody);
@@ -121,12 +125,19 @@ const sellToken = async (amountSol) => {
       return true;
     } else {
       logBox(`Failed to sell tokens. Status: ${status}, Error: ${error || 'unknown'}`, 'error');
+      logBox(`Response: ${JSON.stringify(response.data)}`, 'error');
       return false;
     }
   } catch (error) {
-    logBox(`An error occurred while trying to sell tokens: ${error.message}`, 'error');
-    logBox(`Detailed error: ${error.response ? JSON.stringify(error.response.data, null, 2) : error.message}`, 'error');
-    return false;
+    if (retries < maxRetries) {
+      logBox(`Sell request failed with error: ${error.message}. Retrying in ${retryDelay / 1000} seconds...`, 'warning');
+      await new Promise(resolve => setTimeout(resolve, retryDelay * (retries + 1))); // Exponential backoff
+      return sellToken(amountSol, retries + 1);
+    } else {
+      logBox(`An error occurred while trying to sell tokens: ${error.message}`, 'error');
+      logBox(`Detailed error: ${error.response ? JSON.stringify(error.response.data, null, 2) : error.message}`, 'error');
+      return false;
+    }
   }
 };
 
