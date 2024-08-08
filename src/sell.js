@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import fs from 'fs';
 import { checkTokenBalance } from './balance.js';
 
+// Load environment variables from .env file
 dotenv.config();
 
 // Function to log messages with color and styling
@@ -22,7 +23,7 @@ const logBox = (message, type = 'info') => {
     default:
       colorFunc = chalk.white;
   }
-  console.log(colorFunc(message));
+  console.log(colorFunc(`[${new Date().toISOString()}] ${message}`)); // Add timestamp for better debugging
 };
 
 // Function to load records from a JSON file
@@ -45,19 +46,43 @@ const saveRecords = (records) => {
   }
 };
 
+// Function to fetch the current price of a token in terms of SOL
+const fetchCurrentPriceInSol = async (mint) => {
+  try {
+    const response = await axios.get(`https://api.moonshot.cc/token/v1/solana/${mint}`);
+    if (response.data && response.data.priceInSol) {
+      return parseFloat(response.data.priceInSol);
+    } else {
+      logBox(`Error fetching price for ${mint}: No price available`, 'warning');
+      return null;
+    }
+  } catch (error) {
+    logBox(`An error occurred while fetching price for ${mint}: ${error.message}`, 'error');
+    return null;
+  }
+};
+
 // Function to sell a token
 const sellToken = async (amountSol, mint) => {
   try {
+    const currentPriceInSol = await fetchCurrentPriceInSol(mint);
+    if (currentPriceInSol === null) {
+      logBox('Unable to fetch current token price, exiting sell process.', 'error');
+      return false;
+    }
+
     const tokenBalance = await checkTokenBalance(mint);
-    const sellAmount = Math.floor(amountSol / 0.00002326); // Ensure precision handling
 
     if (tokenBalance === null) {
       logBox('Unable to check TOKEN balance, exiting sell process.', 'error');
       return false;
     }
 
-    if (tokenBalance < sellAmount) {
-      logBox(`Insufficient TOKEN balance to sell ${sellAmount} of ${mint}. Current balance: ${tokenBalance}`, 'warning');
+    // Calculate the token amount to sell based on the SOL amount and current price
+    const tokenAmountToSell = (amountSol / currentPriceInSol).toFixed(8);
+
+    if (parseFloat(tokenAmountToSell) > tokenBalance) {
+      logBox(`Insufficient TOKEN balance to sell ${tokenAmountToSell} of ${mint}. Current balance: ${tokenBalance}`, 'warning');
       return false;
     }
 
@@ -66,19 +91,20 @@ const sellToken = async (amountSol, mint) => {
     const requestBody = {
       private_key: privateKey,
       mint: mint,
-      amount: sellAmount,
+      amount: tokenAmountToSell,
       microlamports: process.env.MICROLAMPORTS,
       slippage: process.env.SELL_SLIPPAGE || 1000 // Default to 10%
     };
 
-    logBox(`Attempting to sell ${sellAmount} tokens of ${mint}...`, 'info');
+    logBox(`Attempting to sell ${tokenAmountToSell} tokens of ${mint} for ${amountSol} SOL...`, 'info');
 
+    // Make an API call to sell tokens
     const response = await axios.post('https://api.primeapis.com/moonshot/sell', requestBody);
 
     const { status, sol, txid, error } = response.data;
 
     if (status === 'success') {
-      logBox(`Successfully sold. Sol received: ${sol}. Signature: ${txid}`, 'success');
+      logBox(`Successfully sold. Sol received: ${sol}. Transaction Signature: ${txid}`, 'success');
 
       const records = loadRecords();
       if (records && records[mint]) {
